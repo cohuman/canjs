@@ -303,4 +303,53 @@ test("attr does not blow away old observable when going from empty to having ite
 	equals(project.attr("members").length, 1, "list should have bob in it");
 });
 
+test("Nested List attr()", function(){
+  can.Model('NestedListAttrTest.User', {}, {});
+  can.Model.List('NestedListAttrTest.User.List', {}, {});
+
+  can.Model('NestedListAttrTest.Activity',{
+    attributes : {
+      yayers : "NestedListAttrTest.User.models"
+    }
+  }, {});
+
+  can.Model('NestedListAttrTest.Comment',{
+    attributes : {
+       activity : "NestedListAttrTest.Activity.model"
+    }
+  }, {});
+
+  can.Model('NestedListAttrTest.Task', {
+    attributes : {
+      comments : "NestedListAttrTest.Comment.models"
+    }
+  }, {});
+
+
+  var task = NestedListAttrTest.Task.model({
+    id : 1,
+    comments : [{
+      activity : {
+        yayers : [{id : 3},{id : 27}]
+      }
+    }]
+  });
+
+
+  equal(task.comments[0].activity.yayers instanceof NestedListAttrTest.User.List, true, "the list is a User List");
+  var oldListCid = task.comments[0].activity.attr("yayers")._cid;
+  var oldUserCid = task.comments[0].activity.attr("yayers")[0]._cid
+  task.attr({
+    id : 1,
+    comments : [{
+      activity : {
+        yayers : [{id : 3, name : "Tom"},{id : 27, name : "Jerry"}]
+      }
+    }]
+  });
+
+  equal(oldListCid, task.comments[0].activity.attr("yayers")._cid, "The list is the same list");
+  equal(task.comments[0].activity.attr("yayers")[0]._cid, oldUserCid, "users are the same");
+});
+
 })();
