@@ -1,6 +1,65 @@
 (function() {
 	module("can/view");
 
+	test("registerNode, unregisterNode, and replace work", function(){
+
+		var nodeLists = can.view.live.nodeLists;
+		
+		// Reset the registered nodes
+		for (var key in nodeLists.nodeMap) {
+			if (nodeLists.hasOwnProperty(key)) {
+				delete nodeLists.nodeMap[key];
+			}
+		}
+		for (var key in nodeLists.nodeListMap) {
+			if (nodeLists.hasOwnProperty(key)) {
+				delete nodeLists.nodeListMap[key];
+			}
+		}
+	
+		var ids = function(arr){
+			return can.map(arr, function(item){
+				return item.id
+			})
+		},
+			two = {id: 2},
+			listOne = [{id: 1},two,{id: 3}];
+		
+		nodeLists.register(listOne);
+		var listTwo = [two];
+	
+		nodeLists.register(listTwo);
+	
+		var newLabel = {id: 4}
+		nodeLists.replace(listTwo, [newLabel])
+	
+		same( ids(listOne), [1,4,3], "replaced" )
+		same( ids(listTwo), [4] );
+	
+		nodeLists.replace(listTwo,[{id: 5},{id: 6}]);
+	
+		same( ids(listOne), [1,5,6,3], "replaced" );
+	
+		same( ids(listTwo), [5,6], "replaced" );
+	
+		nodeLists.replace(listTwo,[{id: 7}])
+	
+		same( ids(listOne), [1,7,3], "replaced" );
+	
+		same( ids(listTwo), [7], "replaced" );
+	
+		nodeLists.replace( listOne, [{id: 8}])
+	
+		same( ids(listOne), [8], "replaced" );
+		same( ids(listTwo), [7], "replaced" );
+	
+		nodeLists.unregister(listOne);
+		nodeLists.unregister(listTwo);
+	
+		same(nodeLists.nodeMap, {} );
+		same(nodeLists.nodeListMap ,{} )
+	});
+
 	test("multiple template types work", function(){
 		var expected = '<h3>helloworld</h3>';
 		can.each(["micro","ejs","jaml", "mustache"], function(ext){
@@ -275,11 +334,29 @@
 		div.appendChild(frag);
 		can.append( can.$("#qunit-test-area"), div)
 		equal(div.outerHTML.match(/__!!__/g), null, 'No __!!__ contained in HTML content')
+		can.view.live.nodeLists.unregister(domainList);
 
 		//equal(can.$('#test-dropdown')[0].outerHTML, can.$('#test-dropdown2')[0].outerHTML, 'Live bound select and non-live bound select the same');
 
-		
+
 	});
+
+	test('Live binding on number inputs', function(){
+
+		var template = can.view.ejs('<input id="candy" type="number" value="<%== state.attr("number") %>" />');
+		var observe = new can.Observe({ number : 2 });
+		var frag = template({ state: observe });
+
+		can.append(can.$("#qunit-test-area"), frag);
+
+		var input = document.getElementById('candy');
+
+		equal(input.getAttribute('value'), 2, 'render workered');
+
+		observe.attr('number', 5);
+
+		equal(input.getAttribute('value'), 5, 'update workered');
+	})
 
 	test("Resetting a live-bound <textarea> changes its value to __!!__ (#223)", function() {
 		var template = can.view.ejs("<form><textarea><%= this.attr('test') %></textarea></form>"),
@@ -300,4 +377,59 @@
 		form.reset();
 		equal(form.children[0].value, 'testing', 'Textarea value set back to original live-bound value');
 	});
+
+	test("Deferred fails (#276)", function(){
+		var foo = new can.Deferred();
+		stop();
+		can.view.render("//can/view/test//deferred.ejs",foo)
+			.fail(function(error) {
+				equals(error.message, 'Deferred error');
+				start();
+			});
+
+		setTimeout(function(){
+			foo.reject({
+				message: 'Deferred error'
+			})
+		},100);
+	});
+
+	test("Object of deferreds fails (#276)", function() {
+		var foo = new can.Deferred(),
+			bar = new can.Deferred();
+
+		stop();
+		can.view.render("//can/view/test//deferreds.ejs",{
+			foo : typeof foo.promise == 'function' ? foo.promise() : foo,
+			bar : bar
+		}).fail(function(error){
+			equals(error.message, 'foo error');
+			start();
+		});
+
+		setTimeout(function(){
+			foo.reject({
+				message: 'foo error'
+			});
+		},100);
+
+		bar.resolve('Bar done');
+	});
+
+	test("Using '=' in attribute does not truncate the value", function() {
+		var template = can.view.ejs("<div id='equalTest' <%= this.attr('class') %>></div>"),
+			obs = new can.Observe({
+				class : 'class="someClass"'
+			}),
+			frag = template(obs), div;
+
+		can.append(can.$("#qunit-test-area"), frag);
+
+		div = document.getElementById('equalTest');
+		obs.attr('class', 'class="do=not=truncate=me"');
+
+		equal(div.className, 'do=not=truncate=me', 'class is right');
+	});
+
+
 })();

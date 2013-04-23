@@ -17,11 +17,12 @@ steal('can/util',function(can) {
 		// Returns the `prop` property from `obj`.
 		// If `add` is true and `prop` doesn't exist in `obj`, create it as an 
 		// empty object.
-		getNext = function( obj, prop, add ) {
-			return prop in obj ?
-				obj[ prop ] : 
-				( add && ( obj[ prop ] = {} ));
-		},
+    getNext = function( obj, prop, add ) {
+      var result = obj[prop];
+
+      if(result === undefined && add === true) { result = obj[prop] = {} }
+      return result
+    },
 
 		// Returns `true` if the object can have properties (no `null`s).
 		isContainer = function( current ) {
@@ -162,7 +163,7 @@ steal('can/util',function(can) {
 			 * @param {Object} data The data to be used to look for properties.  If it's an array, multiple
 			 * objects can be used.
 			 * @param {Boolean} [remove] if a match is found, remove the property from the object
-			 * @return The converted string or `null` if any data to render are `undefined`
+			 * @return {String} The converted string or `null` if any data to render are `undefined`
 			 */
 			sub: function( str, data, remove ) {
 				var obs = [];
@@ -170,7 +171,7 @@ steal('can/util',function(can) {
 				obs.push( str.replace( strReplacer, function( whole, inside ) {
 
 					// Convert inside to type.
-					var ob = can.getObject( inside, data, remove === undefined? remove : !remove );
+          var ob = can.getObject( inside, data, remove === true ? false : undefined );
 
 					if(ob === undefined) {
 						obs = null;

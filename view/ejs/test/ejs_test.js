@@ -1,5 +1,5 @@
 (function() {
-	
+
 module("can/view/ejs, rendering",{
 	setup : function(){
 
@@ -30,66 +30,6 @@ var getAttr = function(el, attrName){
 			el.className:
 			el.getAttribute(attrName);
 	}
-
-test("registerNode, unregisterNode, and replace work", function(){
-	// Reset the registered nodes
-	for (var key in can.view.nodeMap) {
-		if (can.view.nodeMap.hasOwnProperty(key)) {
-			delete can.view.nodeMap[key];
-		}
-	}
-	for (var key in can.view.nodeListMap) {
-		if (can.view.nodeListMap.hasOwnProperty(key)) {
-			delete can.view.nodeListMap[key];
-		}
-	}
-	
-	var ids = function(arr){
-		return can.map(arr, function(item){
-			return item.id
-		})
-	},
-		two = {id: 2},
-		listOne = [{id: 1},two,{id: 3}];
-		
-	can.view.registerNode(listOne);
-	var listTwo = [two];
-	
-	can.view.registerNode(listTwo);
-	
-	var newLabel = {id: 4}
-	can.view.replace(listTwo, [newLabel])
-	
-	same( ids(listOne), [1,4,3], "replaced" )
-	same( ids(listTwo), [4] );
-	
-	can.view.replace(listTwo,[{id: 5},{id: 6}]);
-	
-	same( ids(listOne), [1,5,6,3], "replaced" );
-	
-	same( ids(listTwo), [5,6], "replaced" );
-	
-	can.view.replace(listTwo,[{id: 7}])
-	
-	same( ids(listOne), [1,7,3], "replaced" );
-	
-	same( ids(listTwo), [7], "replaced" );
-	
-	can.view.replace( listOne, [{id: 8}])
-	
-	same( ids(listOne), [8], "replaced" );
-	same( ids(listTwo), [7], "replaced" );
-	
-	can.view.unregisterNode(listOne);
-	can.view.unregisterNode(listTwo);
-	
-	
-	
-	same(can.view.nodeMap, {} );
-	same(can.view.nodeListMap ,{} )
-	
-	
-});
 
 
 
@@ -231,22 +171,22 @@ test("helpers", function() {
 test('list helper', function(){
 	
 	var text = "<% list(todos, function(todo){ %><div><%= todo.name %></div><% }) %>";
-	var	Todos = new can.Observe.List([
+	var	todos = new can.Observe.List([
 			{id: 1, name: 'Dishes'}
 		]),
-		compiled = new can.EJS({text: text}).render({todos: Todos}),
+		compiled = new can.EJS({text: text}).render({todos: todos}),
 		div = document.createElement('div');
 
 		div.appendChild(can.view.frag(compiled))
 		equals(div.getElementsByTagName('div').length, 1, '1 item in list')
 		
-		Todos.push({id: 2, name: 'Laundry'})
+		todos.push({id: 2, name: 'Laundry'})
 		equals(div.getElementsByTagName('div').length, 2, '2 items in list')
 		
-		Todos.splice(0, 2);
+		todos.splice(0, 2);
 		equals(div.getElementsByTagName('div').length, 0, '0 items in list')
 
-		Todos.push({id: 4, name: 'Pick up sticks'});
+		todos.push({id: 4, name: 'Pick up sticks'});
 		equals(div.getElementsByTagName('div').length, 1, '1 item in list again')
 
 });
@@ -377,6 +317,29 @@ test("hookups in tables", function(){
 	equals(div.getElementsByTagName('tbody')[0].firstChild.firstChild.nodeName, "TD","updated tag");
 	equals(div.getElementsByTagName('tbody')[0].firstChild.firstChild.innerHTML.replace(/(\r|\n)+/g, ""), 
 		"Ms.","updated content");
+})
+
+//Issue 233
+test("multiple tbodies in table hookup", function(){
+	var text = "<table>" +
+			"<% can.each(people, function(person){ %>"+
+				"<tbody><tr><td><%= person.name %></td></tr></tbody>"+
+			"<% }) %>"+
+		"</table>",
+		people = new can.Observe.List([
+			{
+				name: "Steve"
+			},
+			{
+				name: "Doug"
+			}
+		]),
+		compiled = new can.EJS({text: text}).render({people: people}),
+		div = document.createElement('div');
+
+	div.appendChild(can.view.frag(compiled));
+
+	equals(div.getElementsByTagName('tbody').length, 2,"two tbodies");
 })
 
 test('multiple hookups in a single attribute', function() {
@@ -979,9 +942,11 @@ test("live binding select", function(){
 		div.appendChild(can.view.frag(compiled))
 		equal(div.getElementsByTagName('option').length, 3, '3 items in list')
 
-		equal(div.getElementsByTagName('option')[0].value, ""+items[0].id,
+		var option = div.getElementsByTagName('option')[0] 
+		equal(option.value, ""+items[0].id,
 			   'value attr set');
-		equal(div.getElementsByTagName('option')[0].textContent, items[0].title,
+			  
+		equal(option.textContent || option.text, items[0].title,
 			   'content of option');
 
 		items.push({id: 3, name: 'Go to pub'})
@@ -1021,12 +986,14 @@ test("reset on a live bound input", function(){
 });
 
 test("A non-escaping live magic tag within a control structure and no leaks", function(){
+
+	var nodeLists = can.view.live.nodeLists;
 	
-	for(var prop in can.view.nodeMap){
-		delete can.view.nodeMap[prop]
+	for(var prop in nodeLists.nodeMap){
+		delete nodeLists.nodeMap[prop]
 	}
-	for(var prop in can.view.nodeListMap){
-		delete can.view.nodeListMap[prop]
+	for(var prop in nodeLists.nodeListMap){
+		delete nodeLists.nodeListMap[prop]
 	}
 	
 	var text = "<div><% items.each(function(ob) { %>" +
@@ -1056,8 +1023,8 @@ test("A non-escaping live magic tag within a control structure and no leaks", fu
 	
 	can.remove( can.$(div.firstChild) )
 		
-	same(can.view.nodeMap, {} );
-	same(can.view.nodeListMap ,{} )
+	same(nodeLists.nodeMap, {} );
+	same(nodeLists.nodeListMap ,{} )
 });
 
 
@@ -1236,6 +1203,267 @@ test("Observe with array attributes", function() {
 	
 	equal(div.getElementsByTagName('li')[1].innerHTML, 'Line #2 changed', 'Check updated array');
 	equal(div.getElementsByTagName('div')[0].innerHTML, 'Hello again', 'Check updated message');
+})
+
+//Issue 271
+test('live binding with html comment', function(){
+	var text = '<table><tr><th>Todo</th></tr><!-- do not bother with me -->' +
+			'<% todos.each(function(todo){ %><tr><td><%= todo.name %></td></tr><% }) %></table>',
+		Todos = new can.Observe.List([
+			{id: 1, name: 'Dishes'},
+		]),
+		compiled = new can.EJS({text: text}).render({todos: Todos}),
+		div = document.createElement('div');
+
+	div.appendChild(can.view.frag(compiled));
+	equals(div.getElementsByTagName('table')[0].getElementsByTagName('td').length, 1, '1 item in list');
+
+	Todos.push({id: 2, name: 'Laundry'});
+	equals(div.getElementsByTagName('table')[0].getElementsByTagName('td').length, 2, '2 items in list');
+
+	Todos.splice(0, 2);
+	equals(div.getElementsByTagName('table')[0].getElementsByTagName('td').length, 0, '0 items in list');
+})
+
+test("HTML comment with element callback", function(){
+	var text = ["<ul>",
+				"<% todos.each(function(todo) { %>",
+				"<li<%= (el) -> can.data(can.$(el),'todo',todo) %>>",
+				"<!-- html comment #1 -->",
+				"<%= todo.name %>",
+				"<!-- html comment #2 -->",
+				"</li>",
+				"<% }) %>",
+				"</ul>"],
+		Todos = new can.Observe.List([
+			{id: 1, name: "Dishes"}
+		]),
+		compiled = new can.EJS({text: text.join("\n")}).render({todos: Todos}),
+		div = document.createElement("div")
+
+	div.appendChild(can.view.frag(compiled));
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li").length, 1, "1 item in list");
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li")[0].childNodes.length, 5, "5 nodes in item #1");
+
+	Todos.push({id: 2, name: "Laundry"});
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li").length, 2, "2 items in list");
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li")[0].childNodes.length, 5, "5 nodes in item #1");
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li")[1].childNodes.length, 5, "5 nodes in item #2");
+
+	Todos.splice(0, 2);
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li").length, 0, "0 items in list");
+})
+
+// https://github.com/bitovi/canjs/issues/153
+test("Interpolated values when iterating through an Observe.List should still render when not surrounded by a DOM node", function() {
+	var renderer = can.view.ejs('issue-153-no-dom', '<% can.each(todos, function(todo) { %><span><%= todo.attr("name") %></span><% }) %>'),
+		renderer2 = can.view.ejs('issue-153-dom', '<% can.each(todos, function(todo) { %><%= todo.attr("name") %><% }) %>'),
+		todos = [ new can.Observe({id: 1, name: 'Dishes'}), new can.Observe({id: 2, name: 'Forks'}) ],
+		data = { 
+			todos: new can.Observe.List(todos)
+		},
+		arr = {
+			todos: todos
+		},
+		div = document.createElement('div');
+		
+	div.appendChild(can.view('issue-153-no-dom', arr));
+	equal(div.innerHTML, "<span>Dishes</span><span>Forks</span>", 'Array item rendered with DOM container');
+	div.innerHTML = '';
+	div.appendChild(can.view('issue-153-no-dom', data));
+	equal(div.innerHTML, "<span>Dishes</span><span>Forks</span>", 'List item rendered with DOM container');
+	div.innerHTML = '';
+	div.appendChild(can.view('issue-153-dom', arr));
+	equal(div.innerHTML, "DishesForks", 'Array item rendered without DOM container');
+	div.innerHTML = '';
+	div.appendChild(can.view('issue-153-dom', data));
+	equal(div.innerHTML, "DishesForks", 'List item rendered without DOM container');
+	data.todos[1].attr('name', 'Glasses');
+	data.todos.push(new can.Observe({ id: 3, name: 'Knives' }));
+	equal(div.innerHTML, "DishesGlassesKnives", 'New list item rendered without DOM container');
+});
+
+test("correctness of data-view-id and only in tag opening", function(){
+	var text = ["<textarea><select><% can.each(this.items, function(item) { %>",
+				"<option<%= (el) -> el.data('item', item) %>><%= item.title %></option>",
+				"<% }) %></select></textarea>"],
+		items = [{id: 1, title: "One"}, {id: 2, title: "Two"}],
+		compiled = new can.EJS({text: text.join("")}).render({items: items}),
+		expected = "^<textarea data-view-id='[0-9]+'><select><option data-view-id='[0-9]+'>One</option>" +
+			"<option data-view-id='[0-9]+'>Two</option></select></textarea>$";
+
+	ok(compiled.search(expected) === 0, "Rendered output is as expected");
+});
+
+test("return blocks within element tags", function(){
+
+
+
+	var animals = new can.Observe.List(['sloth', 'bear']),
+		template = "<ul>"+
+					"<%==lister(animals, function(animal){%>"+
+						"<li><%=animal %></li>"+
+					"<%})%>"+
+					"</ul>";
+
+	var renderer = can.view.ejs(template)
+
+	var div = document.createElement('div')
+
+	var frag = renderer({
+		lister: function(items, callback){
+			return function(el){
+				equal(el.nodeName.toLowerCase(), "li", "got the LI it created")
+			}
+		},
+		animals: animals
+	});
+	div.appendChild(frag)
+
+	// $("#qunit-test-area").html(div);
+
+	//div.getElementsByTagName('label')[0].myexpando = "EXPANDO-ED";
+
+})
+
+test("Each does not redraw items",function(){
+
+	var animals = new can.Observe.List(['sloth', 'bear']),
+		template = "<div>my<b>favorite</b>animals:"+
+					"<%==each(animals, function(animal){%>"+
+						"<label>Animal=</label> <span><%=animal %></span>"+
+					"<%})%>"+
+					"!</div>";
+
+	var renderer = can.view.ejs(template)
+
+	var div = document.createElement('div')
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+
+	div.getElementsByTagName('label')[0].myexpando = "EXPANDO-ED";
+
+	//animals.push("dog")
+	equal(div.getElementsByTagName('label').length, 2, "There are 2 labels")
+
+	animals.push("turtle")
+
+	equal(div.getElementsByTagName('label')[0].myexpando, "EXPANDO-ED", "same expando");
+
+	equal(div.getElementsByTagName('span')[2].innerHTML, "turtle", "turtle added");
+
+});
+
+test("Each works with no elements",function(){
+
+	var animals = new can.Observe.List(['sloth', 'bear']),
+		template = "<%==each(animals, function(animal){%>"+
+						"<%=animal %> "+
+					"<%})%>";
+
+	var renderer = can.view.ejs(template)
+
+	var div = document.createElement('div')
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+	animals.push("turtle")
+
+	equal(div.innerHTML, "sloth bear turtle ", "turtle added");
+
+});
+
+test("Each does not redraw items (normal array)",function(){
+
+	var animals = ['sloth', 'bear', 'turtle'],
+		template = "<div>my<b>favorite</b>animals:"+
+					"<%each(animals, function(animal){%>"+
+						"<label>Animal=</label> <span><%=animal %></span>"+
+					"<%})%>"+
+					"!</div>";
+
+	var renderer = can.view.ejs(template)
+
+	var div = document.createElement('div')
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+
+	div.getElementsByTagName('label')[0].myexpando = "EXPANDO-ED";
+
+	//animals.push("dog")
+	equal(div.getElementsByTagName('label').length, 3, "There are 2 labels")
+
+	equal(div.getElementsByTagName('label')[0].myexpando, "EXPANDO-ED", "same expando");
+
+	equal(div.getElementsByTagName('label')[0].myexpando, "EXPANDO-ED", "same expando");
+
+	equal(div.getElementsByTagName('span')[2].innerHTML, "turtle", "turtle added");
+
+});
+
+
+test("list works within another branch", function(){
+	var animals = new can.Observe.List([]),
+		template = "<div>Animals:"+
+					"<% if( animals.attr('length') ){ %>~"+
+						"<% animals.each(function(animal){%>"+
+							"<span><%=animal %></span>"+
+						"<%})%>"+
+					"<% } else { %>"+
+						"No animals"+
+					"<% } %>"+
+					"!</div>";
+
+	var renderer = can.view.ejs(template)
+
+	var div = document.createElement('div');
+
+	// $("#qunit-test-area").html(div);
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+
+	equal( div.getElementsByTagName('div')[0].innerHTML, "Animals:No animals!" );
+
+	animals.push('sloth');
+
+	equal(div.getElementsByTagName('span').length, 1, "There is 1 sloth");
+
+	animals.pop();
+
+	equal( div.getElementsByTagName('div')[0].innerHTML, "Animals:No animals!" );
+})
+
+test("each works within another branch", function(){
+	var animals = new can.Observe.List([]),
+		template = "<div>Animals:"+
+					"<% if( animals.attr('length') ){ %>~"+
+						"<%==each(animals, function(animal){%>"+
+							"<span><%=animal %></span>"+
+						"<%})%>"+
+					"<% } else { %>"+
+						"No animals"+
+					"<% } %>"+
+					"!</div>";
+
+	var renderer = can.view.ejs(template)
+
+	var div = document.createElement('div');
+
+
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+
+	equal( div.getElementsByTagName('div')[0].innerHTML, "Animals:No animals!" );
+	animals.push('sloth');
+
+	equal(div.getElementsByTagName('span').length, 1, "There is 1 sloth");
+	animals.pop();
+
+	equal( div.getElementsByTagName('div')[0].innerHTML, "Animals:No animals!" );
 })
 
 })();

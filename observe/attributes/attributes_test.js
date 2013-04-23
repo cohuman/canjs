@@ -132,7 +132,8 @@ test("basic observe associations", function(){
 test("single seralize w/ attr name", function(){
 	var Breakfast = can.Observe({
 		attributes: {
-			time: "date"
+			time: "date",
+			name: 'default'
 		},
 		serialize: {
 			date: function(d){
@@ -143,10 +144,12 @@ test("single seralize w/ attr name", function(){
 	
 	var time = new Date();
 	var b = new Breakfast({
-		time: time
+		time: time,
+		name: 'eggs'
 	});
 	
 	equals(b.serialize('time'), time.getTime());
+	ok(b.serialize())
 });
 
 test("defaults", function(){
@@ -298,7 +301,7 @@ test("attr does not blow away old observable when going from empty to having ite
 	});
 
 	var oldCid = project.attr("members")._cid;
-	project.attr({members:['bob']});
+	project.attr({members:[{id: 1, name: "bob"}]});
 	same(project.attr("members")._cid, oldCid, "should be the same observe, so that views bound to the old one get updates")
 	equals(project.attr("members").length, 1, "list should have bob in it");
 });
@@ -351,5 +354,103 @@ test("Nested List attr()", function(){
   equal(oldListCid, task.comments[0].activity.attr("yayers")._cid, "The list is the same list");
   equal(task.comments[0].activity.attr("yayers")[0]._cid, oldUserCid, "users are the same");
 });
+
+})();
+
+test("Default converters and boolean fix (#247)", function() {
+	var MyObserve = can.Observe({
+			attributes: {
+				enabled: 'boolean',
+				time: 'date',
+				age: 'number'
+			}
+		}, {}),
+		obs = new MyObserve({
+			enabled: 'false',
+			time: 1358980553275,
+			age: '26'
+		});
+
+	deepEqual(obs.attr('enabled'), false, "Attribute got converted to boolean false");
+	obs.attr('enabled', 'true');
+	deepEqual(obs.attr('enabled'), true, "Attribute got converted to boolean true");
+
+	obs.attr('enabled', '0');
+	deepEqual(obs.attr('enabled'), false, "Attribute got converted to boolean false");
+	obs.attr('enabled', '1');
+	deepEqual(obs.attr('enabled'), true, "Attribute got converted to boolean true");
+
+	deepEqual(obs.attr('age'), 26, "Age converted from string to number");
+	// It's ok to just check if it got converted to a date
+	ok(obs.attr('time') instanceof Date, "Attribute is a date");
+});
+
+test("Nested converters called twice (#174)", function(){
+    OtherThing = can.Model({
+        attributes: {
+            score: 'capacity'
+        },
+        convert: {
+            capacity: function(val) {
+                return val * 10;
+            }
+        }
+    }, {});
+    
+    Thing = can.Model({
+        attributes: {
+            otherThing: 'OtherThing.model'
+        },
+        
+        findOne : 'GET /things/{id}'
+    }, {});
+	var t = new Thing({
+	    "name": "My Thing",
+	    "otherThing": {
+	        "score": 1
+	    },
+	    "id": "ALLCACHES"
+	})
+	t.attr({
+	    "otherThing": {
+	        "score": 2
+	    },
+	    "id": "ALLCACHES"
+	})
+
+	equal(t.attr("otherThing.score"), 20, "converter called correctly")
+
+})
+
+// tests that the workaround listed in #208 works with the correct call signature and data
+test("Nested converters called with merged data", function(){
+	var MyObserve = can.Observe({
+	    attributes: {
+	        nested: "nested"
+	    },
+	    convert: {
+			nested: function(data, oldVal) {
+				if(oldVal instanceof MyObserve) {
+					return oldVal.attr(data);
+				}
+				return new MyObserve(data);
+			}
+	    }
+	},{});
+
+	var obs = new MyObserve({
+	    nested: {
+	        name: "foo",
+	        count: 1
+	    }
+	});
+	var nested = obs.attr("nested");
+	obs.attr({
+	    nested: {
+	        count: 2
+	    }
+	});
+	ok(nested === obs.attr("nested"), "same object");
+})
 
 })();

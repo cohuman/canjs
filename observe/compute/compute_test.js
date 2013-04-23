@@ -94,6 +94,7 @@ test("compute a compute", function() {
 			return parseInt( project.attr('progress') * 100, 10);
 		}
 	});
+	percent.named = "PERCENT";
 
 	equals(percent(),50,'percent starts right');
 	percent.bind('change',function() {
@@ -107,6 +108,7 @@ test("compute a compute", function() {
 			return percent() + '/100';
 		}
 	});
+	fraction.named ="FRACTIOn"
 
 	fraction.bind('change',function() {
 		// noop
@@ -230,13 +232,17 @@ test("compute only updates once when a list's contents are replaced",function(){
 	
 	var list = new can.Observe.List([{name: "Justin"}]),
 		computedCount = 0;
+
 	var compute = can.compute(function(){
 		computedCount++;
 		list.each(function(item){
 			item.attr('name')
 		})
-	})
+	});
+
 	equals(0,computedCount, "computes are not called until their value is read")
+
+
 	compute.bind("change", function(ev, newVal, oldVal){
 	
 	})
@@ -285,6 +291,185 @@ test("compute of computes", function(){
 	
 	
 	searchQuery("food")
+})
+
+
+test("compute doesn't rebind and leak with 0 bindings", function() {
+	var state = new can.Observe({
+		foo: "bar"
+	});
+	var computedA = 0, computedB = 0;
+	var computeA = can.compute(function() {
+		computedA++;
+		return state.attr("foo") === "bar";
+	});
+	var computeB = can.compute(function() {
+		computedB++;
+		return state.attr("foo") === "bar" || 15;
+	});
+
+	function aChange(ev, newVal) {
+		if(newVal) {
+			computeB.bind("change.computeA", function() {
+				// noop
+			});
+		} else {
+			computeB.unbind("change.computeA");
+		}
+	}
+
+	computeA.bind("change", aChange);
+	aChange(null, computeA());
+
+	equal(computedA, 1, "binding A computes the value");
+	equal(computedB, 1, "A=true, so B is bound, computing the value");
+
+	state.attr("foo", "baz");
+	equal(computedA, 2, "A recomputed and unbound B");
+	equal(computedB, 1, "B was unbound, so not recomputed");
+
+	state.attr("foo", "bar");
+	equal(computedA, 3, "A recomputed => true");
+	equal(computedB, 2, "A=true so B is rebound and recomputed");
+
+	computeA.unbind("change", aChange);
+	computeB.unbind("change.computeA");
+	state.attr("foo", "baz");
+	equal(computedA, 3, "unbound, so didn't recompute A");
+	equal(computedB, 2, "unbound, so didn't recompute B");
+});
+
+/*
+test("compute setter without external value", function(){
+
+	var age = can.compute(0,function(newVal, oldVal){
+		 var num = +newVal
+	    if(! isNaN(num) && 0 <= num && num <= 120 ){
+	        return num;
+	    } else {
+	    	return oldVal;
+	    }
+	})
+	equal(age(), 0, "initial value set");
+	age.bind("change", function(ev, newVal, oldVal){
+		equal(ev, newVal)
+	});
+
+	age(5);
+	equal(age(), 5, "5 set")
+
+	age("invalid");
+	equal(age(), 5, "5 set")
+
+})*/
+
+test("compute value",function(){
+	expect(9)
+	var input = {
+		value: 1
+	}
+
+	var value = can.compute("",{
+		get: function(){
+			return input.value;
+		},
+		set: function(newVal){
+			input.value = newVal;
+			//input.onchange && input.onchange();
+		},
+		on: function(update){
+			input.onchange = update;
+		},
+		off: function(){
+			delete input.onchange;
+		}
+	})
+
+	equal(value(), 1, "original value");
+	ok(!input.onchange, "nothing bound");
+	value(2);
+
+	equal(value(), 2, "updated value");
+
+	equal(input.value, 2, "updated input.value");
+
+
+
+	value.bind("change", function(ev, newVal, oldVal){
+		equal(newVal, 3, "newVal");
+		equal(oldVal, 2, "oldVal");
+		value.unbind("change", arguments.callee);
+	})
+	ok(input.onchange, "binding to onchange");
+
+	value(3);
+	ok(!input.onchange, "removed binding")
+	equal(value(), 3);
+});
+
+test("compute bound to observe",function(){
+	var me = new can.Observe({name: "Justin"});
+
+	var bind = me.bind,
+		unbind = me.unbind,
+		bindCount = 0;
+	me.bind = function(){
+		bindCount ++;
+		bind.apply(this,arguments);
+	}
+	me.unbind = function(){
+		bindCount --;
+		unbind.apply(this,arguments);
+	}
+
+	var name = can.compute(me,"name")
+
+	equal(bindCount, 0);
+	equal(name(), "Justin");
+
+	var handler = function(ev, newVal, oldVal){
+		equal(newVal, "Justin Meyer");
+		equal(oldVal, "Justin")
+	}
+
+	name.bind("change",handler)
+
+	equal(bindCount, 1);
+
+	name.unbind("change",handler);
+
+	equal(bindCount, 0);
+});
+
+test("compute bound to input value",function(){
+	var input = document.createElement('input');
+	input.value = 'Justin';
+
+	var value = can.compute(input, "value","change")
+
+	equal(value(),"Justin");
+
+	value("Justin M.");
+
+	equal(input.value,"Justin M.","input change correctly");
+
+
+	var handler = function(ev, newVal, oldVal){
+		equal(newVal, "Justin Meyer");
+		equal(oldVal, "Justin M.")
+	}
+
+	value.bind("change", handler);
+
+
+	input.value = "Justin Meyer";
+
+	value.unbind("change", handler);
+
+	input.value = "Brian Moschel";
+
+	equal(value(),"Brian Moschel");
+
 })
 
 

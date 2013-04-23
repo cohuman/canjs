@@ -5,11 +5,14 @@ can.each([ can.Observe, can.Model ], function(clss){
 	if(clss === undefined){
 		return;
 	}
+	var isObject = function( obj ) {
+		return typeof obj === 'object' && obj !== null && obj;
+	};
 	
 	can.extend(clss, {
 		/**
 		 * @attribute can.Observe.static.attributes
-		 * @parent can.Observe.attributes
+		 * @parent can.Observe.static
 		 *
 		 * `can.Observe.attributes` is a property that contains key/value pair(s) of an attribute's name and its
 		 * respective type for using in [can.Observe.static.convert convert] and [can.Observe.prototype.serialize serialize].
@@ -27,7 +30,7 @@ can.each([ can.Observe, can.Model ], function(clss){
 		
 		/**
 		 * @attribute can.Observe.static.convert
-		 * @parent can.Observe.attributes
+		 * @parent can.Observe.static
 		 *
 		 * You often want to convert from what the observe sends you to a form more useful to JavaScript. 
 		 * For example, contacts might be returned from the server with dates that look like: "1982-10-20". 
@@ -69,11 +72,28 @@ can.each([ can.Observe, can.Model ], function(clss){
 		 *		contact.attr('birthday', '4-26-2012') 
 		 *
 		 *		contact.attr('birthday'); //-> Date
+		 * 
+		 * If a property is set with an object as a value, the corresponding converter is called with the unmerged data (the raw object)
+		 * as the first argument, and the old value (a can.Observe) as the second:
+		 * 
+		 * 		var MyObserve = can.Observe({
+	    			attributes: {
+	        			nested: "nested"
+	    			},
+	    			convert: {
+						nested: function(data, oldVal) {
+							if(oldVal instanceof MyObserve) {
+								return oldVal.attr(data);
+							}
+							return new MyObserve(data);
+						}
+	    			}
+				},{});
 		 *
 		 * ## Assocations and Convert
 		 *
 		 * If you have assocations defined within your model(s), you can use convert to automatically
-		 * call seralize on those models.
+		 * call serialize on those models.
 		 * 
 		 * 		can.Model("Contact",{
 		 * 			attributes : {
@@ -111,8 +131,11 @@ can.each([ can.Observe, can.Model ], function(clss){
 			"number": function( val ) {
 				return parseFloat(val);
 			},
-			"boolean": function( val ) {
-				return Boolean(val === "false" ? 0 : val);
+			"boolean": function (val) {
+				if(val === 'false' || val === '0' || !val) {
+					return false;
+				}
+				return true;
 			},
 			"default": function( val, oldVal, error, type ) {
 				var construct = can.getObject(type),
@@ -130,7 +153,7 @@ can.each([ can.Observe, can.Model ], function(clss){
 		},
 		/**
 		 * @attribute can.Observe.static.serialize
-		 * @parent can.Observe.attributes
+		 * @parent can.Observe.static
 		 *
 		 * `can.Observe.static.seralize` is object of name-function pairs that are used to 
 		 * serialize attributes.

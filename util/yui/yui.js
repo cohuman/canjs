@@ -12,7 +12,7 @@
 //
 //	var url = "http://yui.yahooapis.com/combo?3.7.3/build/" + yuilibs.join("&3.7.3/build/")
 
-steal('can/util/can.js', 'yui', 'can/util/event.js', "can/util/fragment.js", 'can/util/array/each.js', 'can/util/object/isplain', 'can/util/deferred.js', function (can) {
+steal('can/util/can.js', 'yui', 'can/util/event.js', "can/util/fragment.js", 'can/util/array/each.js', 'can/util/object/isplain', 'can/util/deferred.js', '../hashchange.js', function (can) {
 
 	// ---------
 	// _YUI node list._
@@ -224,16 +224,18 @@ steal('can/util/can.js', 'yui', 'can/util/event.js', "can/util/fragment.js", 'ca
 			if (nodelist instanceof Y.NodeList || !nodelist.on || nodelist.getDOMNode) {
 				nodelist.each(function (node) {
 					var node = can.$(node),
-						events = can.data(node, "events"),
-						eventName = ev + ":" + selector,
-						handlers = events[eventName],
-						handler = handlers[cb.__bindingsIds];
-					handler.detach();
-					delete handlers[cb.__bindingsIds];
-					if (can.isEmptyObject(handlers)) {
-						delete events[ev];
-					}
-					if (can.isEmptyObject(events)) {
+						events = can.data(node, "events");
+					if (events) {
+						var eventName = ev + ":" + selector,
+							handlers = events[eventName],
+							handler = handlers[cb.__bindingsIds];
+						handler.detach();
+						delete handlers[cb.__bindingsIds];
+						if (can.isEmptyObject(handlers)) {
+							delete events[ev];
+						}
+						if (can.isEmptyObject(events)) {
+						}
 					}
 				});
 			} else {

@@ -16,9 +16,9 @@ test("Basic Observe",9,function(){
 	var added;
 	
 	state.bind("change", function(ev, attr, how, val, old){
-		equals(attr, "properties.brand.0", "correct change name")
-		equals(how, "add")
-		equals(val[0].attr("foo"),"bar", "correct")
+		equals(attr, "properties.brand.0", "Adding to a list - correct change name")
+		equals(how, "add", "Adding to a list - correct change type")
+		equals(val[0].attr("foo"),"bar", "correct", "Adding to a list - correct newVal")
 		
 		added = val[0];
 	});
@@ -30,9 +30,9 @@ test("Basic Observe",9,function(){
 	state.unbind("change");
 	
 	added.bind("change", function(ev, attr, how, val, old){
-		equals(attr, "foo","foo property set on added")
-		equals(how, "set","added")
-		equals(val, "zoo","added")
+		equals(attr, "foo","Middle bubble - foo property set on added")
+		equals(how, "set","Middle bubble - added")
+		equals(val, "zoo","Middle bubble - added")
 	})
 	state.bind("change", function(ev, attr, how, val, old){
 		equals(attr, "properties.brand.0.foo")
@@ -193,6 +193,68 @@ test("remove attr", function(){
 	equals(undefined,  state.attr("properties") );
 });
 
+test("remove nested attr", function(){
+	var state = new can.Observe({
+		properties : {
+			nested: true
+		}
+	});
+	
+	state.bind("change", function(ev, attr, how, newVal, old){
+		equals(attr, "properties.nested");
+		equals(how, "remove")
+		same(old , true);
+	})
+	
+	state.removeAttr("properties.nested");
+	equals(undefined,  state.attr("properties.nested") );
+});
+
+test("remove item in nested array", function(){
+	var state = new can.Observe({
+		array : ["a", "b"]
+	});
+	
+	state.bind("change", function(ev, attr, how, newVal, old){
+		equals(attr, "array.1");
+		equals(how, "remove")
+		same(old, ["b"]);
+	})
+	
+	state.removeAttr("array.1");
+	equals(undefined,  state.attr("array.1") );
+});
+
+test("remove nested property in item of array", function(){
+	var state = new can.Observe({
+		array : [{
+			nested: true
+		}]
+	});
+	
+	state.bind("change", function(ev, attr, how, newVal, old){
+		equals(attr, "array.0.nested");
+		equals(how, "remove")
+		same(old, true);
+	})
+	
+	state.removeAttr("array.0.nested");
+	equals(undefined,  state.attr("array.0.nested") );
+});
+
+test("remove nested property in item of array observe", function(){
+	var state = new can.Observe.List([{nested: true}]);
+	
+	state.bind("change", function(ev, attr, how, newVal, old){
+		equals(attr, "0.nested");
+		equals(how, "remove")
+		same(old, true);
+	})
+	
+	state.removeAttr("0.nested");
+	equals(undefined,  state.attr("0.nested") );
+});
+
 test("attr with an object", function(){
 	var state = new can.Observe({
 		properties : {
@@ -341,15 +403,18 @@ test("splice unbinds", function(){
 
 test("always gets right attr even after moving array items", function(){
 	var l = new can.Observe.List([{foo: 'bar'}]);
+	
+	// get the first item
 	var o = l.attr(0);
+	// add a new item
 	l.unshift("A new Value")
 	
-	
+	// listen to change
 	l.bind('change', function(ev, attr, how){
 		equals(attr, "1.foo")
 	})
 	
-	
+	// this should have bubbled right
 	o.attr('foo','led you')
 })
  
@@ -421,6 +486,30 @@ test("instantiating can.Observe.List of correct type", function() {
 	equal(list[1].getName(), 'Another test', 'Pushed item gets converted as well');
 });
 
+test("can.Observe.List.prototype.splice converts objects (#253)", function() {
+	var Ob = can.Observe({
+		getAge : function() {
+			return this.attr('age') + 10;
+		}
+	});
+
+	var list = new Ob.List([ {
+		name: 'Tester',
+		age: 23
+	}, {
+		name: 'Tester 2',
+		age: 44
+	}]);
+
+	equal(list[0].getAge(), 33, 'Converted age');
+
+	list.splice(1, 1, {
+		name: 'Spliced',
+		age: 92
+	});
+
+	equal(list[1].getAge(), 102, 'Converted age of spliced');
+});
 
 test("removing an already missing attribute does not cause an event", function(){
 	var ob = new can.Observe();
@@ -462,7 +551,7 @@ test("bind on deep properties",function(){
 	
 });
 
-test("startBatch and stopBatch and changed event", function(){
+test("startBatch and stopBatch and changed event", 5, function(){
 	
 	var ob = new can.Observe({name: {first: "Brian"}, age: 29}),
 		bothSet = false,
@@ -497,6 +586,31 @@ test("startBatch and stopBatch and changed event", function(){
 	
 	
 	
+});
+
+test("startBatch callback", 4, function(){
+	
+	var ob = new can.Observe({
+			game: {
+				name: "Legend of Zelda"
+			}, 
+			hearts: 15
+		}),
+		callbackCalled = false;
+	
+	ob.bind("change", function(){
+		equals(callbackCalled, false, 'startBatch callback not called yet');
+	});
+
+	can.Observe.startBatch(function(){
+		ok(true, "startBatch callback called");
+		callbackCalled = true;
+	});
+	
+	ob.attr('hearts', 16);
+	equals(callbackCalled, false, 'startBatch callback not called yet');
+	can.Observe.stopBatch();
+	equals(callbackCalled, true, 'startBatch callback called');
 });
 
 test("nested observe attr", function() {
@@ -589,6 +703,93 @@ test("replace with a deferred that resolves to an Observe.List", function(){
 		equal(list[0].attr("name"),"foo", "set to foo")
 	})
 	list.replace(def);
+});
+
+test(".attr method doesn't merge nested objects (#207)", function() {
+	// From http://jsfiddle.net/andrewborovin/wsNZB/
+	var test = new can.Observe({
+		a: {
+			a1: 1,
+			a2: 2
+		},
+		b: {
+			b1: 1,
+			b2: 2
+		}
+	});
+
+	test.attr({
+		a: {
+			a2: 3
+		},
+		b: {
+			b1: 3
+		}
+	});
+
+	deepEqual(test.attr(), {"a":{"a1":1,"a2":3},"b":{"b1":3,"b2":2}}, "Object merged as expected");
+});
+
+test("IE8 error on list setup with Observe.List (#226)", function() {
+	var list = new can.Observe.List(['first', 'second', 'third']),
+		otherList = new can.Observe.List(list);
+
+	deepEqual(list.attr(), otherList.attr(), 'Lists are the same');
+});
+
+test("initialize Observe.List with a deferred",function(){
+	stop()
+	var def = new can.Deferred();
+	var list = new can.Observe.List(def);
+	list.bind("add",function(ev, items, index){
+		same(items,["a","b"]);
+		equal(index, 0);
+		start();
+	});
+	setTimeout(function(){
+		def.resolve(["a","b"])
+	},10)
+});
+
+test("triggering a event while in a batch (#291)", function(){
+	// normally a change event will not be triggered just
+	// by changing properties. 
+	// however, model does this in  destroyed
+	// so a "change","destroyed" event bubbles.
+	// this test errors if things are broken
+	stop();
+	var observe = new can.Observe();
+	
+	can.Observe.startBatch();
+	can.trigger(observe, "change","random")
+	
+	setTimeout(function(){
+		can.Observe.stopBatch();
+		start()
+	},10);
+	
+});
+
+test("dot separated keys (#257, #296)", function() {
+	var ob = new can.Observe({
+		'test.value': 'testing',
+		other: {
+			test: 'value'
+		}
+	});
+	equal(ob['test.value'], 'testing', 'Set value with dot separated key properly');
+	equal(ob.attr('test.value'), 'testing', 'Could retrieve value with .attr');
+	equal(ob.attr('other.test'), 'value', 'Still getting dot separated value');
+
+	ob.attr({
+		'other.bla': 'othervalue'
+	});
+	equal(ob['other.bla'], 'othervalue', 'Key is not split');
+	equal(ob.attr('other.bla'), 'othervalue', 'Could retrieve value with .attr');
+
+	ob.attr('other.stuff', 'thinger');
+	equal(ob.attr('other.stuff'), 'thinger', 'Set dot separated value');
+	deepEqual(ob.attr('other').serialize(), { test: 'value', stuff: 'thinger' }, 'Object set properly');
 });
 
 })();

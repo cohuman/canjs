@@ -1,5 +1,5 @@
 steal('can/util/can.js', 'mootools', 'can/util/event.js','can/util/fragment.js', 'can/util/deferred.js',
-'can/util/array/each.js', 'can/util/object/isplain', function(can) {
+'can/util/array/each.js', 'can/util/object/isplain', '../hashchange.js', function(can) {
 	// mootools.js
 	// ---------
 	// _MooTools node list._
@@ -126,13 +126,19 @@ steal('can/util/can.js', 'mootools', 'can/util/event.js','can/util/fragment.js',
 	can.isFunction = function(f){
 		return typeOf(f) == 'function'
 	}
+
+
+
 	// Make this object so you can bind on it.
 	can.bind = function( ev, cb){
+		
 		// If we can bind to it...
 		if(this.bind && this.bind !== can.bind){
 			this.bind(ev, cb)
 		} else if(this.addEvent) {
-			this.addEvent(ev, cb)
+			this.addEvent(ev, cb);
+		} else if(this.nodeName && this.nodeType == 1) {
+			$(this).addEvent(ev, cb)
 		} else {
 			// Make it bind-able...
 			can.addEvent.call(this, ev, cb)
@@ -145,6 +151,8 @@ steal('can/util/can.js', 'mootools', 'can/util/event.js','can/util/fragment.js',
 			this.unbind(ev, cb)
 		} else if(this.removeEvent) {
 			this.removeEvent(ev, cb)
+		} if(this.nodeName && this.nodeType == 1) {
+			$(this).removeEvent(ev, cb)
 		} else {
 			// Make it bind-able...
 			can.removeEvent.call(this, ev, cb)
@@ -234,7 +242,8 @@ steal('can/util/can.js', 'mootools', 'can/util/event.js','can/util/fragment.js',
 	}
 	can.ajax = function(options){
 		var d = can.Deferred(),
-			requestOptions = can.extend({}, options);
+			requestOptions = can.extend({}, options),
+			request;
 		// Map jQuery options to MooTools options.
 
 		for(var option in optionsMap){
@@ -247,25 +256,26 @@ steal('can/util/can.js', 'mootools', 'can/util/event.js','can/util/fragment.js',
 		requestOptions.method = requestOptions.method || 'get';
 		requestOptions.url = requestOptions.url.toString();
 
-		var success = options.success,
-			error = options.error;
+		var success = options.onSuccess || options.success,
+			error = options.onFailure || options.error;
 
-		requestOptions.onSuccess = function(responseText, xml){
-			var data = responseText;
-			if(options.dataType ==='json'){
-				data = eval("("+data+")")
-			}
+		requestOptions.onSuccess = function(response, xml){
+			var data = response;
 			updateDeferred(request.xhr, d);
 			d.resolve(data,"success",request.xhr);
 			success && success(data,"success",request.xhr);
 		}
-		requestOptions.onError = function(){
+		requestOptions.onFailure = function(){
 			updateDeferred(request.xhr, d);
 			d.reject(request.xhr,"error");
 			error(request.xhr,"error");
 		}
 
-		var request = new Request(requestOptions);
+		if(options.dataType ==='json'){
+			request = new Request.JSON(requestOptions);
+		} else {
+			request = new Request(requestOptions);
+		}
 		request.send();
 		updateDeferred(request.xhr, d);
 		return d;
@@ -340,7 +350,8 @@ steal('can/util/can.js', 'mootools', 'can/util/event.js','can/util/fragment.js',
 	// IE barfs if text node.
 	var idOf = Slick.uidOf;
 	Slick.uidOf = function(node){
-		if(node.nodeType === 1 || node === window){
+		// for some reason, in IE8, node will be the window but not equal it.
+		if(node.nodeType === 1 || node === window || node.document === document ) {
 			return idOf(node);
 		} else {
 			return Math.random();

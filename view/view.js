@@ -34,8 +34,10 @@ steal("can/util", function( can ) {
 		}
 
 		if(can.isDeferred(result)){
-			result.done(function(result, data) {
+			result.then(function(result, data) {
 				deferred.resolve.call(deferred, pipe(result), data);
+			}, function() {
+				deferred.fail.apply(deferred, arguments);
 			});
 			return deferred;
 		}
@@ -378,6 +380,8 @@ steal("can/util", function( can ) {
 
 					// If there's a `callback`, call it back with the result.
 					callback && callback(result, dataCopy);
+				}, function() {
+					deferred.reject.apply(deferred, arguments)
 				});
 				// Return the deferred...
 				return deferred;
@@ -620,9 +624,12 @@ steal("can/util", function( can ) {
 			$view.cached[id] = new can.Deferred().resolve(function( data, helpers ) {
 				return renderer.call(data, data, helpers);
 			});
-			return function(){
-				return $view.frag(renderer.apply(this,arguments))
-			};
+			function frag(){
+				return $view.frag(renderer.apply(this,arguments));
+			}
+			// expose the renderer for mustache
+			frag.render = renderer;
+			return frag;
 		}
 
 	});

@@ -43,7 +43,7 @@ steal('can/util','can/observe', function( can ) {
 			// If we get a string, handle it.
 			if ( typeof ajaxOb == "string" ) {
 				// If there's a space, it's probably the type.
-				var parts = ajaxOb.split(/\s/);
+				var parts = ajaxOb.split(/\s+/);
 				params.url = parts.pop();
 				if ( parts.length ) {
 					params.type = parts.pop();
@@ -67,8 +67,18 @@ steal('can/util','can/observe', function( can ) {
 			}, params ));
 		},
 		makeRequest = function( self, type, success, error, method ) {
+			var args;
+			// if we pass an array as `self` it it means we are coming from
+			// the queued request, and we're passing already serialized data
+			// self's signature will be: [self, serializedData]
+			if(can.isArray(self)){
+				args = self[1];
+				self = self[0];
+			} else {
+				args = self.serialize();
+			}
+			args = [args];
 			var deferred,
-				args = [self.serialize()],
 				// The model.
 				model = self.constructor,
 				jqXHR;
@@ -165,6 +175,28 @@ steal('can/util','can/observe', function( can ) {
 		 *     Friend = can.Model({
 		 *       id: "Id"
 		 *     },{});
+		 */
+		/**
+		 * @attribute removeAttr
+		 * Sets whether model conversion should remove non existing attributes or merge with
+		 * the existing attributes. The default is `false`.
+		 * For example, if `Task.findOne({ id: 1 })` returns
+		 *
+		 *      { id: 1, name: 'Do dishes', index: 1, color: ['red', 'blue'] }
+		 *
+         * for the first request and
+		 *
+		 *      { id: 1, name: 'Really do dishes', color: ['green'] }
+		 *
+		 *  for the next request, the actual model attributes would look like:
+		 *
+		 *      { id: 1, name: 'Really do dishes', index: 1, color: ['green', 'blue'] }
+		 *
+		 *  Because the attributes of the original model and the updated model will
+		 *  be merged. Setting `removeAttr` to `true` will result in model attributes like
+		 *
+		 *      { id: 1, name: 'Really do dishes', color: ['green'] }
+		 *
 		 */
 	ajaxMethods = {
 		/**
@@ -604,6 +636,7 @@ steal('can/util','can/observe', function( can ) {
 			this._url = this._shortName+"/{"+this.id+"}"
 		},
 		_ajax : ajaxMaker,
+		_makeRequest : makeRequest,
 		_clean : function(){
 			this._reqs--;
 			if(!this._reqs){
@@ -820,7 +853,7 @@ steal('can/util','can/observe', function( can ) {
 		 * @param {Object} attributes An object of property name and values like:
 		 * 
 		 *      {id: 1, name : "dishes"}
-		 * 
+		 *
 		 * @return {model} a model instance.
 		 */
 		model: function( attributes ) {
@@ -831,7 +864,8 @@ steal('can/util','can/observe', function( can ) {
 				attributes = attributes.serialize();
 			}
 			var id = attributes[ this.id ],
-			    model = id && this.store[id] ? this.store[id].attr(attributes) : new this( attributes );
+			    model = (id || id === 0) && this.store[id] ?
+				    this.store[id].attr(attributes, this.removeAttr || false) : new this( attributes );
 			if(this._reqs){
 				this.store[attributes[this.id]] = model;
 			}
@@ -1014,16 +1048,9 @@ steal('can/util','can/observe', function( can ) {
 		 * model instance is removed from the store, freeing memory.  
 		 * 
 		 */
-		bind: function(eventName){
-			if ( ! ignoreHookup.test( eventName )) { 
-				if ( ! this._bindings ) {
-					this.constructor.store[this.__get(this.constructor.id)] = this;
-					this._bindings = 0;
-				}
-				this._bindings++;
-			}
-			
-			return can.Observe.prototype.bind.apply( this, arguments );
+		_bindsetup: function(){
+			this.constructor.store[this.__get(this.constructor.id)] = this;
+			return can.Observe.prototype._bindsetup.apply( this, arguments );
 		},
 		/**
 		 * @function unbind
@@ -1049,14 +1076,9 @@ steal('can/util','can/observe', function( can ) {
 		 * 
 		 * @return {model} the model instance.
 		 */
-		unbind : function(eventName){
-			if(!ignoreHookup.test(eventName)) { 
-				this._bindings--;
-				if(!this._bindings){
-					delete this.constructor.store[getId(this)];
-				}
-			}
-			return can.Observe.prototype.unbind.apply(this, arguments);
+		_bindteardown: function(){
+			delete this.constructor.store[getId(this)];
+			return can.Observe.prototype._bindteardown.apply( this, arguments );;
 		},
 		// Change `id`.
 		___set: function( prop, val ) {
@@ -1116,6 +1138,11 @@ steal('can/util','can/observe', function( can ) {
 
 			// Call event on the instance
 			can.trigger(this,funcName);
+			
+			// triggers change event that bubble's like
+			// handler( 'change','1.destroyed' ). This is used
+			// to remove items on destroyed from Model Lists.
+			// but there should be a better way.
 			can.trigger(this,"change",funcName)
 			//!steal-remove-start
 			steal.dev.log("Model.js - "+ constructor.shortName+" "+ funcName);
@@ -1199,23 +1226,19 @@ steal('can/util','can/observe', function( can ) {
    *         console.log(oldVals[indx].attr("name") + " removed")
    *     })
    *
-   *     todo1.destory(); // console shows "Do the dishes removed"
+   *     todo1.destroy(); // console shows "Do the dishes removed"
    *
    *
    */
 	var ML = can.Model.List = can.Observe.List({
-		setup : function(){
-			can.Observe.List.prototype.setup.apply(this, arguments );
-			// Send destroy events.
-			var self = this;
-			this.bind('change', function(ev, how){
-				if(/\w+\.destroyed/.test(how)){
-					var index = self.indexOf(ev.target);
-					if (index != -1) {
-						self.splice(index, 1);
-					}
+		_changes: function(ev, attr){
+			can.Observe.List.prototype._changes.apply(this, arguments );
+			if(/\w+\.destroyed/.test(attr)){
+				var index = this.indexOf(ev.target);
+				if (index != -1) {
+					this.splice(index, 1);
 				}
-			})
+			}
 		}
 	})
 

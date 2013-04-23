@@ -1,5 +1,7 @@
-steal('funcunit/syn', 'can/view/mustache', 'can/model', function(){
+steal('funcunit/syn', 'can/view/mustache', 'can/model', './hello.mustache', './fancy_name.mustache', 
+	'./helper.mustache','./noglobals.mustache', function(_syn,_mustache,_model,hello,fancyName,helpers, noglobals){
 	
+
 module("can/view/mustache, rendering",{
 	setup : function(){
 
@@ -88,64 +90,6 @@ var getAttr = function(el, attrName){
 			el.className:
 			el.getAttribute(attrName);
 	}
-
-test("registerNode, unregisterNode, and replace work", function(){
-	// Reset the registered nodes
-	for (var key in can.view.nodeMap) {
-		if (can.view.nodeMap.hasOwnProperty(key)) {
-			delete can.view.nodeMap[key];
-		}
-	}
-	for (var key in can.view.nodeListMap) {
-		if (can.view.nodeListMap.hasOwnProperty(key)) {
-			delete can.view.nodeListMap[key];
-		}
-	}
-	
-	var ids = function(arr){
-		return can.map(arr, function(item){
-			return item.id
-		})
-	},
-		two = {id: 2},
-		listOne = [{id: 1},two,{id: 3}];
-		
-	can.view.registerNode(listOne);
-	var listTwo = [two];
-	
-	can.view.registerNode(listTwo);
-	
-	var newLabel = {id: 4}
-	can.view.replace(listTwo, [newLabel])
-	
-	same( ids(listOne), [1,4,3], "replaced" )
-	same( ids(listTwo), [4] );
-	
-	can.view.replace(listTwo,[{id: 5},{id: 6}]);
-	
-	same( ids(listOne), [1,5,6,3], "replaced" );
-	
-	same( ids(listTwo), [5,6], "replaced" );
-	
-	can.view.replace(listTwo,[{id: 7}])
-	
-	same( ids(listOne), [1,7,3], "replaced" );
-	
-	same( ids(listTwo), [7], "replaced" );
-	
-	can.view.replace( listOne, [{id: 8}])
-	
-	same( ids(listOne), [8], "replaced" );
-	same( ids(listTwo), [7], "replaced" );
-	
-	can.view.unregisterNode(listOne);
-	can.view.unregisterNode(listTwo);
-	
-	
-	
-	same(can.view.nodeMap, {} );
-	same(can.view.nodeListMap ,{} )
-});
 
 test("Model hookup", function(){
 	
@@ -368,7 +312,6 @@ test("Absolute partials", function() {
 });
 
 test("No arguments passed to helper", function() {
-
 	can.view.mustache("noargs","{{noargHelper}}");
 	can.Mustache.registerHelper("noargHelper", function(){
 		return "foo"
@@ -381,6 +324,24 @@ test("No arguments passed to helper", function() {
 
 	same(div1.innerHTML, "foo");
 	same(div2.innerHTML, "foo");
+});
+
+test("No arguments passed to helper with list", function() {
+	can.view.mustache("noargs","{{#items}}{{noargHelper}}{{/items}}");
+	var div = document.createElement('div');
+
+	div.appendChild( can.view("noargs", {
+		items: new can.Observe.List([{
+			name: "Brian"
+		}]) 
+	},
+	{
+		noargHelper: function(){
+			return "foo"
+		}
+	}) );
+
+	same(div.innerHTML, "foo");
 });
 
 test("Partials and observes", function() {
@@ -422,11 +383,15 @@ test("Deeply nested partials", function() {
 
 test("Handlebars helper: if/else", function() {
 	var t = {
-		template: "{{#if name}}{{name}}{{/if}}{{#if missing}}{{else}} is missing!{{/if}}",
-		expected: "Andy is missing!",
-		data: { name: 'Andy' }
+		template: "{{#if name}}{{name}}{{/if}}{{#if missing}} is missing!{{/if}}",
+		expected: "Andy",
+		data: { name: 'Andy', missing: undefined }
 	};
 	
+	var expected = t.expected.replace(/&quot;/g, '&#34;').replace(/\r\n/g, '\n');
+	same(new can.Mustache({ text: t.template }).render(t.data), expected);
+
+	t.data.missing = null;
 	var expected = t.expected.replace(/&quot;/g, '&#34;').replace(/\r\n/g, '\n');
 	same(new can.Mustache({ text: t.template }).render(t.data), expected);
 });
@@ -446,11 +411,18 @@ test("Handlebars helper: each", function() {
 	var t = {
 		template: "{{#each names}}{{this}} {{/each}}",
 		expected: "Andy Austin Justin ",
-		data: { names: ['Andy', 'Austin', 'Justin'] }
+		data: { names: ['Andy', 'Austin', 'Justin'] },
+		data2: { names: new can.Observe.List(['Andy', 'Austin', 'Justin']) }
 	};
 	
 	var expected = t.expected.replace(/&quot;/g, '&#34;').replace(/\r\n/g, '\n');
-	same(new can.Mustache({ text: t.template }).render(t.data), expected);
+	same(new can.Mustache({ text: t.template }).render(t.data), expected, 'Using array');
+	
+	
+	var div = document.createElement('div');
+	div.appendChild(can.view.mustache(t.template)(t.data2));
+	same(div.innerHTML, expected, 'Using Observe.List');
+	t.data2.names.push('What');
 });
 
 test("Handlebars helper: with", function() {
@@ -1275,9 +1247,10 @@ test("helper parameters don't convert functions", function() {
 	});
 })
 
-test("computes as helper parameters do get converted", function() {
+test("computes as helper parameters don't get converted", function() {
 	can.Mustache.registerHelper('computeTest', function(no) {
-		equal(no, 5, 'Got computed calue');
+		equal(no(), 5, 'Got computed calue');
+		ok(no.isComputed, 'no is still a compute')
 	});
 
 	var renderer = can.view.mustache('{{computeTest test}}');
@@ -1285,6 +1258,54 @@ test("computes as helper parameters do get converted", function() {
 		test : can.compute(5)
 	});
 })
+
+test("computes are supported in default helpers", function() {
+
+  var staches = {
+    "if" : "{{#if test}}if{{else}}else{{/if}}"
+    , "not_if"  :"not_{{^if test}}not{{/if}}if"
+    , "each" : "{{#each test}}{{.}}{{/each}}"
+    , "with" : "wit{{#with test}}<span>{{3}}</span>{{/with}}"
+  };
+  
+    can.view.mustache("count","There are {{ length }} todos")
+  var div = document.createElement('div');
+  div.appendChild( can.view("count", new can.Observe.List([{},{}])) );
+  ok(/There are 2 todos/.test(div.innerHTML), "got all text")
+
+  can.each(Object.keys(staches), function(result) {
+    var renderer = can.view.mustache("compute_" + result, staches[result]);
+    var data = ["e", "a", "c", "h"];
+    var div = document.createElement("div");
+    var actual = can.view("compute_" + result, { test : can.compute(data) });
+    div.appendChild(actual);
+    can.each(div.getElementsByTagName("span"), function(span) {
+      div.replaceChild(span.firstChild, span)
+    });
+    actual = div.innerHTML;
+
+    equal(actual, result, "can.compute resolved for helper " + result);
+  });
+
+  var inv_staches = {
+    "else" : "{{#if test}}if{{else}}else{{/if}}"
+    , "not_not_if" : "not_{{^if test}}not_{{/if}}if"
+    , "not_each" : "not_{{#each test}}_{{/each}}each"
+    , "not_with" : "not{{#with test}}_{{/with}}_with"
+  };
+
+  can.each(Object.keys(inv_staches), function(result) {
+    var renderer = can.view.mustache("compute_" + result, inv_staches[result]);
+    var data = null;
+    var div = document.createElement("div");
+    var actual = can.view("compute_" + result, { test : can.compute(data) });
+    div.appendChild(actual);
+    actual = div.innerHTML;
+
+    equal(actual, result, "can.compute resolved for helper " + result);
+  });
+
+});
 
 test("Rendering models in tables produces different results than an equivalent observe (#202)", 2, function() {
 	var renderer = can.view.mustache('<table>{{#stuff}}<tbody>{{#rows}}<tr></tr>{{/rows}}</tbody>{{/stuff}}</table>');
@@ -1307,6 +1328,27 @@ test("Rendering models in tables produces different results than an equivalent o
 	div.appendChild(dom);
 	elements = div.getElementsByTagName('tbody');
 	equal(elements.length, 1, 'Only one <tbody> rendered');
+})
+
+//Issue 233
+test("multiple tbodies in table hookup", function(){
+	var text = "<table>" +
+			"{{#people}}"+
+				"<tbody><tr><td>{{name}}</td></tr></tbody>"+
+			"{{/people}}"+
+		"</table>",
+		people = new can.Observe.List([
+			{
+				name: "Steve"
+			},
+			{
+				name: "Doug"
+			}
+		]),
+		compiled = new can.Mustache({text: text}).render({people: people});
+
+		can.append( can.$('#qunit-test-area'), can.view.frag(compiled));
+		equals(can.$('#qunit-test-area table tbody').length, 2,"two tbodies");
 })
 
 // http://forum.javascriptmvc.com/topic/live-binding-on-mustache-template-does-not-seem-to-be-working-with-nested-properties
@@ -1345,6 +1387,448 @@ test("Observe list returned from the function", function() {
 	
 	equal(div.getElementsByTagName('li').length, 1, 'Todo is successfuly created');
 	equal(div.getElementsByTagName('li')[0].innerHTML, 'Todo #1', 'Pushing to the list works');
+});
+
+// https://github.com/bitovi/canjs/issues/228
+test("Contexts within helpers not always resolved correctly", function() {
+	can.Mustache.registerHelper("bad_context", function(context, options) {
+		return "<span>" + this.text + "</span> should not be " + options.fn(context);
+	});
+	
+	var renderer = can.view.mustache('{{#bad_context next_level}}<span>{{text}}</span><br/><span>{{other_text}}</span>{{/bad_context}}'),
+		data = {
+			next_level: {
+				text : "bar",
+				other_text : "In the inner context"
+			},
+			text : "foo"
+		},
+		div = document.createElement('div');
+		
+	div.appendChild(renderer(data));
+	equal(div.getElementsByTagName('span')[0].innerHTML, "foo", 'Incorrect context passed to helper');
+	equal(div.getElementsByTagName('span')[1].innerHTML, "bar", 'Incorrect text in helper inner template');
+	equal(div.getElementsByTagName('span')[2].innerHTML, "In the inner context", 'Incorrect other_text in helper inner template');
+});
+
+// https://github.com/bitovi/canjs/issues/227
+test("Contexts are not always passed to partials properly", function() {
+	can.view.registerView('inner', '{{#if other_first_level}}{{other_first_level}}{{else}}{{second_level}}{{/if}}')
+	
+	var renderer = can.view.mustache('{{#first_level}}<span>{{> inner}}</span> should equal <span>{{other_first_level}}</span>{{/first_level}}'),
+		data = {
+			first_level: {
+				second_level : "bar"
+			},
+			other_first_level : "foo"
+		},
+		div = document.createElement('div');
+		
+	div.appendChild(renderer(data));
+	equal(div.getElementsByTagName('span')[0].innerHTML, "foo", 'Incorrect context passed to helper');
+	equal(div.getElementsByTagName('span')[1].innerHTML, "foo", 'Incorrect text in helper inner template');
+});
+
+// https://github.com/bitovi/canjs/issues/231
+test("Functions and helpers should be passed the same context", function() {
+	can.Mustache.registerHelper("to_upper", function(fn, options) {
+		if(arguments.length > 1) {
+			return typeof fn === "function" ? fn().toString().toUpperCase() : fn.toString().toUpperCase();
+		}
+		else {
+			//fn is options
+			return fn.fn(this).trim().toString().toUpperCase();
+		}
+	});
+	
+	var renderer = can.view.mustache('"{{next_level.text}}" uppercased should be "<span>{{to_upper next_level.text}}</span>"<br/>"{{next_level.text}}" uppercased with a workaround is "<span>{{#to_upper}}{{next_level.text}}{{/to_upper}}</span>"'),
+		data = {
+			next_level : {
+				text : function() { return this.other_text; },
+				other_text : "In the inner context"
+			}
+		},
+		div = document.createElement('div');
+	window.other_text = 'Window context';
+		
+	div.appendChild(renderer(data));
+	equal(div.getElementsByTagName('span')[0].innerHTML, data.next_level.other_text.toUpperCase(), 'Incorrect context passed to function');
+	equal(div.getElementsByTagName('span')[1].innerHTML, data.next_level.other_text.toUpperCase(), 'Incorrect context passed to helper');
+});
+
+// https://github.com/bitovi/canjs/issues/153
+test("Interpolated values when iterating through an Observe.List should still render when not surrounded by a DOM node", function() {
+	var renderer = can.view.mustache('{{ #todos }}{{ name }}{{ /todos }}'),
+		renderer2 = can.view.mustache('{{ #todos }}<span>{{ name }}</span>{{ /todos }}'),
+		todos = [ {id: 1, name: 'Dishes'}, {id: 2, name: 'Forks'} ],
+		data = { 
+			todos: new can.Observe.List(todos)
+		},
+		arr = {
+			todos: todos
+		},
+		div = document.createElement('div');
+		
+	div.appendChild(renderer2(arr));
+	equal(div.innerHTML, "<span>Dishes</span><span>Forks</span>", 'Array item rendered with DOM container');
+	div.innerHTML = '';
+	div.appendChild(renderer2(data));
+	equal(div.innerHTML, "<span>Dishes</span><span>Forks</span>", 'List item rendered with DOM container');
+	div.innerHTML = '';
+	div.appendChild(renderer(arr));
+	equal(div.innerHTML, "DishesForks", 'Array item rendered without DOM container');
+	div.innerHTML = '';
+	div.appendChild(renderer(data));
+	equal(div.innerHTML, "DishesForks", 'List item rendered without DOM container');
+	data.todos.push({ id: 3, name: 'Knives' });
+	equal(div.innerHTML, "DishesForksKnives", 'New list item rendered without DOM container');
+});
+
+test("2 way binding helpers", function(){
+	
+	var Value = function(el, value){
+		this.updateElement = function(ev, newVal){
+			el.value = newVal || "";
+		};
+		value.bind("change",this.updateElement);
+		el.onchange = function(){
+			value(el.value)
+		}
+		this.teardown = function(){
+			value.unbind("change",this.updateElement);
+			el.onchange = null;
+		}
+		el.value = value() || "";
+	}
+	var val;
+	can.Mustache.registerHelper('value', function(value){
+	    return function(el){
+	        val = new Value(el, value);
+	    }
+	});
+	
+	var renderer = can.view.mustache('<input {{value user.name}}/>');
+	var div = document.createElement('div'),
+		u = new can.Observe({name: "Justin"});
+	div.appendChild(renderer({
+		user: u
+	}));
+	var input = div.getElementsByTagName('input')[0];
+	
+	equal( input.value , "Justin", "Name is set correctly")
+	
+	u.attr('name','Eli')
+	
+	equal( input.value, "Eli","Changing observe updates value" );
+	
+	input.value = "Austin";
+	input.onchange();
+	equal(u.attr('name'), "Austin", "Name changed by input field" );
+	val.teardown();
+	
+	
+	
+	var renderer = can.view.mustache('<input {{value user.name}}/>');
+	var div = document.createElement('div'),
+		u = new can.Observe({});
+	div.appendChild(renderer({
+		user: u
+	}));
+	var input = div.getElementsByTagName('input')[0];
+	
+	equal( input.value , "", "Name is set correctly")
+	
+	u.attr('name','Eli')
+	
+	equal( input.value, "Eli","Changing observe updates value" );
+	
+	input.value = "Austin";
+	input.onchange();
+	equal(u.attr('name'), "Austin", "Name changed by input field" );
+	val.teardown();
+	
+	
+	var renderer = can.view.mustache('<input {{value user.name}}/>');
+	var div = document.createElement('div'),
+		u = new can.Observe({name: null});
+	div.appendChild(renderer({
+		user: u
+	}));
+	var input = div.getElementsByTagName('input')[0];
+	
+	equal( input.value , "", "Name is set correctly with null")
+	
+	u.attr('name','Eli')
+	
+	equal( input.value, "Eli","Changing observe updates value" );
+	
+	input.value = "Austin";
+	input.onchange();
+	equal(u.attr('name'), "Austin", "Name changed by input field" );
+	val.teardown();
+	
+	
+})
+
+test("can pass in partials",function() {
+	var div = document.createElement('div');
+	var result = hello({
+		name: "World"
+	},{
+		partials: {
+			name: fancyName
+		}
+	});
+	div.appendChild(result);
+
+	ok(/World/.test(div.innerHTML),"Hello World worked");
+});
+
+
+test("can pass in helpers",function() {
+	var div = document.createElement('div');
+	var result = helpers({
+		name: "world"
+	},{
+		helpers: {
+			cap: function(name) {
+				return can.capitalize(name);
+			}
+		}
+	});
+	div.appendChild(result);
+
+	ok(/World/.test(div.innerHTML),"Hello World worked");
+});
+
+
+test("avoid global helpers",function() {
+	var div = document.createElement('div'),
+		div2 = document.createElement('div');
+	var person = new can.Observe({
+		name: "Brian"
+	})
+	var result = noglobals({
+		person: person
+	},{
+		sometext: function(name){
+			return "Mr. "+name()
+		}
+	});
+	var result2 = noglobals({
+		person: person
+	},{
+		sometext: function(name){
+			return name()+" rules"
+		}
+	});
+	div.appendChild(result);
+	div2.appendChild(result2);
+
+	person.attr("name", "Ajax")
+
+	equal(div.innerHTML,"Mr. Ajax");
+	equal(div2.innerHTML,"Ajax rules");
+});
+
+test("HTML comment with helper", function(){
+	var text = ["<ul>",
+				"{{#todos}}",
+				"<li {{data 'todo'}}>",
+				"<!-- html comment #1 -->",
+				"{{name}}",
+				"<!-- html comment #2 -->",
+				"</li>",
+				"{{/todos}}",
+				"</ul>"],
+		Todos = new can.Observe.List([
+			{id: 1, name: "Dishes"}
+		]),
+		compiled = new can.Mustache({text: text.join("\n")}).render({todos: Todos}),
+		div = document.createElement("div")
+
+	div.appendChild(can.view.frag(compiled));
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li").length, 1, "1 item in list");
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li")[0].childNodes.length, 7, "7 nodes in item #1");
+
+	Todos.push({id: 2, name: "Laundry"});
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li").length, 2, "2 items in list");
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li")[0].childNodes.length, 7, "7 nodes in item #1");
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li")[1].childNodes.length, 7, "7 nodes in item #2");
+
+	Todos.splice(0, 2);
+	equals(div.getElementsByTagName("ul")[0].getElementsByTagName("li").length, 0, "0 items in list");
+});
+
+test("correctness of data-view-id and only in tag opening", function(){
+	var text = ["<textarea><select>{{#items}}",
+				"<option{{data 'item'}}>{{title}}</option>",
+				"{{/items}}</select></textarea>"],
+		items = [{id: 1, title: "One"}, {id: 2, title: "Two"}],
+		compiled = new can.Mustache({text: text.join("")}).render({items: items}),
+		expected = "^<textarea data-view-id='[0-9]+'><select><option data-view-id='[0-9]+'>One</option>" +
+			"<option data-view-id='[0-9]+'>Two</option></select></textarea>$";
+
+	ok(compiled.search(expected) === 0, "Rendered output is as expected");
+});
+
+test("Empty strings in arrays within Observes that are iterated should return blank strings", function(){
+	var data = new can.Observe({
+			colors: ["", 'red', 'green', 'blue'],
+		}),
+		compiled = new can.Mustache({text: "<select>{{#colors}}<option>{{.}}</option>{{/colors}}</select>"}).render(data),
+		div = document.createElement('div');
+		
+	div.appendChild(can.view.frag(compiled));
+	equal(div.getElementsByTagName('option')[0].innerHTML, "", "Blank string should return blank");
+});
+
+test("Null properties do not throw errors in Mustache.get", function() {
+	var renderer = can.view.mustache("Foo bar {{#foo.bar}}exists{{/foo.bar}}{{^foo.bar}}does not exist{{/foo.bar}}")
+	, div = document.createElement('div')
+	, div2 = document.createElement('div')
+	, frag, frag2;
+
+	try {
+		frag = renderer(new can.Observe({
+			foo : null
+		}))
+	} catch(e) {
+		ok(false, "rendering with null threw an error");
+	}
+	frag2 = renderer(new can.Observe({
+		foo : {bar : "baz"}
+	}))
+	div.appendChild(frag);
+	div2.appendChild(frag2);
+	equal(div.innerHTML, "Foo bar does not exist");
+	equal(div2.innerHTML, "Foo bar exists");
+});
+
+// Issue #288
+test("Data helper should set proper data instead of a context stack", function() {
+	var partials = {
+		'nested_data': '<span id="has_data" {{data "attr"}}></span>',
+		'nested_data2': '{{#this}}<span id="has_data" {{data "attr"}}></span>{{/this}}',
+		'nested_data3': '{{#bar}}<span id="has_data" {{data "attr"}}></span>{{/bar}}'
+	};
+	for (var name in partials) {
+		can.view.registerView(name, partials[name])
+	}
+	
+	var renderer = can.view.mustache("{{#bar}}{{> #nested_data}}{{/bar}}"),
+		renderer2 = can.view.mustache("{{#bar}}{{> #nested_data2}}{{/bar}}"),
+		renderer3 = can.view.mustache("{{#bar}}{{> #nested_data3}}{{/bar}}"),
+		div = document.createElement('div'),
+		data = new can.Observe({
+        foo : "bar",
+        bar : new can.Observe({})
+    }),
+		span;
+
+	div.innerHTML = '';
+	div.appendChild(renderer(data));
+	span = can.$(div.getElementsByTagName('span')[0]);
+	strictEqual(can.data(span, 'attr'), data.bar, 'Nested data 1 should have correct data');
+
+	div.innerHTML = '';
+	div.appendChild(renderer2(data));
+	span = can.$(div.getElementsByTagName('span')[0]);
+	strictEqual(can.data(span, 'attr'), data.bar, 'Nested data 2 should have correct data');
+	
+	div.innerHTML = '';
+	div.appendChild(renderer3(data));
+	span = can.$(div.getElementsByTagName('span')[0]);
+	strictEqual(can.data(span, 'attr'), data.bar, 'Nested data 3 should have correct data');
+});
+
+// Issue #333
+test("Functions passed to default helpers should be evaluated", function() {
+	var renderer = can.view.mustache("{{#if hasDucks}}Ducks: {{ducks}}{{else}}No ducks!{{/if}}"),
+		div = document.createElement('div'),
+		data = new can.Observe({
+			ducks: "",
+			hasDucks: function() {
+				return this.attr("ducks").length > 0;
+			}
+		});
+
+	div.innerHTML = '';
+	div.appendChild(renderer(data));
+	span = can.$(div.getElementsByTagName('span')[0]);
+	equal(div.innerHTML, 'No ducks!', 'The function evaluated should evaluate false');
+});
+
+test("Helpers always have priority (#258)", function() {
+	can.Mustache.registerHelper('callMe', function(arg) {
+		return arg + ' called me!';
+	});
+
+	var t = {
+		template: "<div>{{callMe 'Tester'}}</div>",
+		expected: "<div>Tester called me!</div>",
+		data: {
+			callMe: function(arg) {
+				return arg + ' hanging up!';
+			}
+		}
+	};
+
+	var expected = t.expected.replace(/&quot;/g, '&#34;').replace(/\r\n/g, '\n');
+	same(new can.Mustache({ text: t.template }).render(t.data), expected);
+});
+
+test("Each does not redraw items",function(){
+
+	var animals = new can.Observe.List(['sloth', 'bear']),
+		renderer = can.view.mustache("<div>my<b>favorite</b>animals:{{#each animals}}<label>Animal=</label> <span>{{this}}</span>{{/}}!</div>");
+
+	var div = document.createElement('div')
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+
+	div.getElementsByTagName('label')[0].myexpando = "EXPANDO-ED";
+
+	//animals.push("dog")
+	equal(div.getElementsByTagName('label').length, 2, "There are 2 labels")
+
+	animals.push("turtle")
+
+	equal(div.getElementsByTagName('label')[0].myexpando, "EXPANDO-ED", "same expando");
+
+	equal(div.getElementsByTagName('span')[2].innerHTML, "turtle", "turtle added");
+
+});
+
+test("each works within another branch", function(){
+	var animals = new can.Observe.List([]),
+		template = "<div>Animals:"+
+					"{{#if animals.length}}~"+
+						"{{#each animals}}"+
+							"<span>{{.}}</span>"+
+						"{{/each}}"+
+					"{{else}}"+
+						"No animals"+
+					"{{/if}}"+
+					"!</div>";
+
+	var renderer = can.view.mustache(template)
+
+	var div = document.createElement('div');
+
+
+
+	var frag = renderer({animals: animals});
+	div.appendChild(frag)
+
+	equal( div.getElementsByTagName('div')[0].innerHTML, "Animals:No animals!" );
+	animals.push('sloth');
+
+	equal(div.getElementsByTagName('span').length, 1, "There is 1 sloth");
+	animals.pop();
+
+	equal( div.getElementsByTagName('div')[0].innerHTML, "Animals:No animals!" );
 })
 
 });

@@ -1,13 +1,9 @@
-steal('can/view', function(can){
+steal('can/view', './elements',function(can, elements){
 
 /**
  * Helper(s)
  */
 var newLine = /(\r|\n)+/g,
-	tagToContentPropMap= {
-		option: "textContent",
-		textarea: "value"
-	},
 	// Escapes characters starting with `\`.
 	clean = function( content ) {
 		return content
@@ -15,13 +11,6 @@ var newLine = /(\r|\n)+/g,
 			.split("\n").join("\\n")
 			.split('"').join('\\"')
 			.split("\t").join("\\t");
-	},
-	reverseTagMap = {
-		tr:"tbody",
-		option:"select",
-		td:"tr",
-		th:"tr",
-		li: "ul"
 	},
 	// Returns a tagName to use as a temporary placeholder for live content
 	// looks forward ... could be slow, but we only do it when necessary
@@ -32,12 +21,13 @@ var newLine = /(\r|\n)+/g,
 		} else {
 			// otherwise go searching for the next two tokens like "<",TAG
 			while(i < tokens.length){
-				if(tokens[i] == "<" && reverseTagMap[tokens[i+1]]){
-					return reverseTagMap[tokens[i+1]];
+				if(tokens[i] == "<" && elements.reverseTagMap[tokens[i+1]]){
+					return elements.reverseTagMap[tokens[i+1]];
 				}
 				i++;
 			}
 		}
+		return '';
 	},
 	bracketNum = function(content){
 		return (--content.split("{").length) - (--content.split("}").length);
@@ -200,6 +190,8 @@ Scanner.prototype = {
 			tagName = '',
 			// stack of tagNames
 			tagNames = [],
+			// Pop from tagNames?
+			popTagName = false,
 			// Declared here.
 			bracketCount,
 			i = 0,
@@ -258,13 +250,13 @@ Scanner.prototype = {
 				case '>':
 					htmlTag = 0;
 					// content.substr(-1) doesn't work in IE7/8
-					var emptyElement = content.substr(content.length-1) == "/";
+					var emptyElement = content.substr(content.length-1) == "/" || content.substr(content.length-2) == "--";
 					// if there was a magic tag
 					// or it's an element that has text content between its tags, 
 					// but content is not other tags add a hookup
 					// TODO: we should only add `can.EJS.pending()` if there's a magic tag 
 					// within the html tags.
-					if(magicInTag || tagToContentPropMap[ tagNames[tagNames.length -1] ]){
+					if(magicInTag || !popTagName && elements.tagToContentPropMap[ tagNames[tagNames.length -1] ]){
 						// make sure / of /> is on the left of pending
 						if(emptyElement){
 							put(content.substr(0,content.length-1), ",can.view.pending(),\"/>\"");
@@ -272,15 +264,18 @@ Scanner.prototype = {
 							put(content, ",can.view.pending(),\">\"");
 						}
 						content = '';
+						magicInTag = 0;
 					} else {
 						content += token;
 					}
 					// if it's a tag like <input/>
-					if(emptyElement){
+					if(emptyElement || popTagName){
 						// remove the current tag in the stack
 						tagNames.pop();
 						// set the current tag to the previous parent
 						tagName = tagNames[tagNames.length-1];
+						// Don't pop next time
+						popTagName = false;
 					}
 					break;
 				case "'":
@@ -302,10 +297,11 @@ Scanner.prototype = {
 					// Track the current tag
 					if(lastToken === '<'){
 						tagName = token.split(/\s/)[0];
-						if( tagName.indexOf("/") === 0 && tagNames.pop() === tagName.substr(1) ) {
+						if( tagName.indexOf("/") === 0 && tagNames[tagNames.length-1] === tagName.substr(1) ) {
 							// set tagName to the last tagName
 							// if there are no more tagNames, we'll rely on getTag.
 							tagName = tagNames[tagNames.length-1];
+							popTagName = true;
 						} else {
 							tagNames.push(tagName);
 						}
@@ -435,7 +431,6 @@ Scanner.prototype = {
 			out = {
 				out: 'with(_VIEW) { with (_CONTEXT) {' + template + " "+finishTxt+"}}"
 			};
-
 		// Use `eval` instead of creating a function, because it is easier to debug.
 		myEval.call(out, 'this.fn = (function(_CONTEXT,_VIEW){' + out.out + '});\r\n//@ sourceURL=' + name + ".js");
 
