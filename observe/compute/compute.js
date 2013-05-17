@@ -73,6 +73,7 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 					var oldValue = data.value,
 						// get the new value
 						newvalue = getValueAndBind();
+
 					// update the value reference (in case someone reads)
 					data.value = newvalue;
 					// if a change happened
@@ -123,6 +124,7 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 			};
 			// set the initial value
 			data.value = getValueAndBind();
+
 			data.isListening = ! can.isEmptyObject(observing);
 			return data;
 		}
@@ -314,7 +316,11 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 			// onchanged needs to know this. It's possible a change happens and results in
 			// something that unbinds the compute, it needs to not to try to recalculate who it
 			// is listening to
-			computeState = { bound: false },
+			computeState = { 
+				bound: false,
+				// true if this compute is calculated from other computes and observes
+				hasDependencies: false
+			},
 			// The following functions are overwritten depending on how compute() is called
 			// a method to setup listening
 			on = function(){},
@@ -330,16 +336,24 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 			set = function(newVal){
 				value = newVal;
 			},
+			// this compute can be a dependency of other computes
+			// 
 			canReadForChangeEvent = true;
 
 		computed = function(newVal){
 			// setting ...
 			if(arguments.length){
+				// save a reference to the old value
 				var old = value;
 
 				// setter may return a value if 
 				// setter is for a value maintained exclusively by this compute
 				var setVal = set.call(context,newVal, old);
+
+				// if this has dependencies return the current value
+				if(computed.hasDependencies){
+					return get.call(context);
+				}
 
 				if(setVal === undefined) {
 					// it's possible, like with the DOM, setting does not
@@ -348,13 +362,13 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 				} else {
 					value = setVal;
 				}
-				
+				// fire the change
 				if( old !== value){
 					can.Observe.triggerBatch(computed, "change",[value, old] );
 				}
 				return value;
 			} else {
-				// Let others konw to listen to changes in this compute
+				// Let others know to listen to changes in this compute
 				if( can.Observe.__reading && canReadForChangeEvent) {
 					can.Observe.__reading(computed,'change');
 				}
@@ -366,7 +380,6 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 				}
 			}
 		}
-
 		if(typeof getterSetter === "function"){
 			set = getterSetter;
 			get = getterSetter;
@@ -384,16 +397,21 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 			
 			if(typeof context == "string"){
 				// `can.compute(obj, "propertyName", [eventName])`
-				var propertyName = context;
+				
+				var propertyName = context,
+					isObserve = getterSetter instanceof can.Observe;
+				if(isObserve){
+					computed.hasDependencies = true;
+				}
 				get = function(){
-					if(getterSetter instanceof can.Observe){
-						return getterSetter.attr(propertyName)
+					if(isObserve){
+						return getterSetter.attr(propertyName);
 					} else {
-						return getterSetter[propertyName]
+						return getterSetter[propertyName];
 					}
 				}
 				set = function(newValue){
-					if(getterSetter instanceof can.Observe){
+					if(isObserve){
 						getterSetter.attr(propertyName, newValue)
 					} else {
 						getterSetter[propertyName] = newValue;
@@ -405,20 +423,31 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 						update(get(), value)
 					};
 					can.bind.call(getterSetter, eventName || propertyName,handler)
+					
+					// use getValueAndObserved because
+					// we should not be indicating that some parent
+					// reads this property if it happens to be binding on it
+					value = getValueAndObserved(get).value
 				}
 				off = function(){
 					can.unbind.call(getterSetter, eventName || propertyName,handler)
 				}
-				value = get();
 
 			} else {
-				// `can.compute(initialValue,{get:, set:, on:, off:})`
-				value = getterSetter;
-				var options = context;
-				get = options.get || get;
-				set = options.set ||set;
-				on = options.on || on;
-				off = options.off || off;
+				// `can.compute(initialValue, setter)`
+				if(typeof context === "function"){
+					value = getterSetter;
+					set = context;
+				} else {
+					// `can.compute(initialValue,{get:, set:, on:, off:})`
+					value = getterSetter;
+					var options = context;
+					get = options.get || get;
+					set = options.set ||set;
+					on = options.on || on;
+					off = options.off || off;
+				}
+
 			}
 
 
@@ -443,30 +472,24 @@ steal('can/util', 'can/util/bind', function(can, bind) {
 
 		return can.extend(computed,{
 			_bindsetup: function(){
-				if( bindings === 0 ){
-					computeState.bound = true;
-					// setup live-binding
-					on.call(this, updater)
-				}
-				bindings++;
+				computeState.bound = true;
+				// setup live-binding
+				on.call(this, updater)
 			},
 			_bindteardown: function(){
-				bindings--;
-				if( bindings === 0 ){
-					off.call(this,updater)
-					computeState.bound = false;
-				}
+				off.call(this,updater)
+				computeState.bound = false;
 			},
 			/**
 			 * @function bind
 			 * `compute.bind("change", handler(event, newVal, oldVal))`
 			 */
-			bind: bind.bind,
+			bind: can.bindAndSetup,
 			/**
 			 * @function unbind
 			 * `compute.unbind("change", handler(event, newVal, oldVal))`
 			 */
-			unbind: bind.unbind
+			unbind: can.unbindAndTeardown
 		});
 	};
 	can.compute.binder = computeBinder;
